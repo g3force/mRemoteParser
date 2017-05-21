@@ -9,42 +9,59 @@ import (
 	"crypto/cipher"
 	"crypto/md5"
 	"bytes"
+	"github.com/schollz/closestmatch"
+	"flag"
 )
 
 const sharedSecret = "mR3m"
 
+var fileName = flag.String("f", "confCons.xml", "The config file containing the connections")
+var listConnections = flag.Bool("l", false, "List all connections")
+var connectQuery = flag.String("q", "", "Choose connection by query")
+
+type Container struct {
+	Name  string `xml:"Name,attr"`
+	Nodes []Node `xml:"Node"`
+}
+
 type Node struct {
 	XMLName  xml.Name `xml:"Node"`
-	Name     string `xml:"Name,attr"`
 	Type     string `xml:"Type,attr"`
 	Username string `xml:"Username,attr"`
 	Password string `xml:"Password,attr"`
 	Hostname string `xml:"Hostname,attr"`
-	Nodes    []Node `xml:"Node"`
+	HomeDir  string `xml:"UserField,attr"`
+	Container
+}
+
+type Connection struct {
+	Path string
+	Node
 }
 
 type ConnectionConfig struct {
 	XMLName xml.Name `xml:"Connections"`
-	Name    string `xml:"Name,attr"`
-	Nodes   []Node `xml:"Node"`
+	Container
 }
 
-func (config ConnectionConfig) Print() {
-	fmt.Printf("Config file: %s\n", config.Name)
+func (config ConnectionConfig) String() (str string) {
+	str = fmt.Sprintf("Config file: %s\n", config.Name)
 	for _, node := range config.Nodes {
-		node.Print()
+		str += node.String()
 	}
+	return
 }
 
-func (node Node) Print() {
+func (node Node) String() (str string) {
 	fmt.Printf("%s: %s", node.Type, node.Name)
 	if node.Type == "Connection" {
-		fmt.Printf(" (Hostname: %s, Username: %s, Password: %s)", node.Hostname, node.Username, node.Password)
+		str += fmt.Sprintf(" (Hostname: %s, Username: %s, Password: %s)", node.Hostname, node.Username, node.Password)
 	}
 	fmt.Print("\n")
 	for _, subNode := range node.Nodes {
-		subNode.Print()
+		str += subNode.String()
 	}
+	return
 }
 
 func DecodePassword(base64DecodedEncryptedPassword string) (decodedPassword string) {
@@ -87,22 +104,74 @@ func DecodePassword(base64DecodedEncryptedPassword string) (decodedPassword stri
 	return
 }
 
-func main() {
-	fileName := "confCons.xml"
-	data, err := ioutil.ReadFile(fileName)
-	if err != nil {
-		fmt.Errorf("Could not read file: %s error: %config\n", fileName, err)
+func (node Container) FillConnectionMap(connections []Connection, path string) (newConnections []Connection) {
+	newConnections = connections
+	for _, subNode := range node.Nodes {
+		if subNode.Type == "Connection" {
+			var connection Connection
+			connection.Node = subNode
+			connection.Path = path + " " + subNode.Name
+			newConnections = append(newConnections, connection)
+		} else {
+			newPath := path + " " + subNode.Name
+			newConnections = subNode.FillConnectionMap(newConnections, newPath)
+		}
+
 	}
+	return newConnections
+}
+
+func buildDict(connections []Connection) (dict []string) {
+	for _, node := range connections {
+		dict = append(dict, node.Path)
+	}
+	return
+}
+
+func (config ConnectionConfig) closestMatch(query string) (node Node) {
+	connections := config.FillConnectionMap([]Connection{}, "")
+	dict := buildDict(connections)
+	bagSize := []int{4}
+	cm := closestmatch.New(dict, bagSize)
+	match := cm.Closest(query)
+
+	for _, connection := range connections {
+		if connection.Path == match {
+			node = connection.Node
+			return
+		}
+	}
+
+	return
+}
+
+func (node Node) ConnectCommand() string {
+	password := DecodePassword(node.Password)
+	return fmt.Sprintf("sshpass -p '%s' ssh -t %s@%s 'cd %s; bash'", password, node.Username, node.Hostname, node.HomeDir)
+}
+
+func main() {
+
+	flag.Parse()
+
+	data, err := ioutil.ReadFile(*fileName)
+	if err != nil {
+		panic(fmt.Sprintf("Could not read file: %s error: %config\n", *fileName, err))
+	}
+
 	var config ConnectionConfig
 	xmlErr := xml.Unmarshal([]byte(data), &config)
 	if xmlErr != nil {
-		fmt.Printf("error: %config", xmlErr)
-		return
+		panic(fmt.Sprintf("error: %config", xmlErr))
 	}
 
-	config.Print()
+	if *listConnections {
+		fmt.Println(config)
+	}
 
-	pw := DecodePassword("WbPPpOXiHdwPSbAue+f0+/0DjVd2x/U43pf8Y+qnU3w=")
-	fmt.Println(pw)
-
+	if connectQuery != nil {
+		node := config.closestMatch(*connectQuery)
+		fmt.Println(node)
+		fmt.Println(node.ConnectCommand())
+	}
 }
