@@ -11,13 +11,14 @@ import (
 	"bytes"
 	"github.com/schollz/closestmatch"
 	"flag"
+	"strings"
+	"os"
 )
 
 const sharedSecret = "mR3m"
 
 var fileName = flag.String("f", "confCons.xml", "The config file containing the connections")
 var listConnections = flag.Bool("l", false, "List all connections")
-var connectQuery = flag.String("q", "", "Choose connection by query")
 
 type Container struct {
 	Name  string `xml:"Name,attr"`
@@ -47,19 +48,19 @@ type ConnectionConfig struct {
 func (config ConnectionConfig) String() (str string) {
 	str = fmt.Sprintf("Config file: %s\n", config.Name)
 	for _, node := range config.Nodes {
-		str += node.String()
+		str += node.String() + "\n"
 	}
 	return
 }
 
 func (node Node) String() (str string) {
-	fmt.Printf("%s: %s", node.Type, node.Name)
 	if node.Type == "Connection" {
-		str += fmt.Sprintf(" (Hostname: %s, Username: %s, Password: %s)", node.Hostname, node.Username, node.Password)
+		str += fmt.Sprintf("%s -> Hostname: %s, Home: %s, Username: %s, Password: %s", node.Name, node.Hostname, node.HomeDir, node.Username, node.Password)
+	} else if node.Type == "Container" {
+		str += fmt.Sprintf("%s\n", node.Name)
 	}
-	fmt.Print("\n")
 	for _, subNode := range node.Nodes {
-		str += subNode.String()
+		str += subNode.String() + "\n"
 	}
 	return
 }
@@ -123,7 +124,7 @@ func (node Container) FillConnectionMap(connections []Connection, path string) (
 
 func buildDict(connections []Connection) (dict []string) {
 	for _, node := range connections {
-		dict = append(dict, node.Path)
+		dict = append(dict, node.Name)
 	}
 	return
 }
@@ -131,18 +132,18 @@ func buildDict(connections []Connection) (dict []string) {
 func (config ConnectionConfig) closestMatch(query string) (node Node) {
 	connections := config.FillConnectionMap([]Connection{}, "")
 	dict := buildDict(connections)
-	bagSize := []int{4}
+	bagSize := []int{10}
 	cm := closestmatch.New(dict, bagSize)
-	match := cm.Closest(query)
+	match := cm.Closest(strings.ToLower(query))
 
 	for _, connection := range connections {
-		if connection.Path == match {
+		if connection.Name == match {
 			node = connection.Node
 			return
 		}
 	}
 
-	return
+	panic("Could find any connection")
 }
 
 func (node Node) ConnectCommand() string {
@@ -166,12 +167,15 @@ func main() {
 	}
 
 	if *listConnections {
-		fmt.Println(config)
+		fmt.Fprintln(os.Stderr, config)
+		return
 	}
 
-	if connectQuery != nil {
-		node := config.closestMatch(*connectQuery)
-		fmt.Println(node)
+	connectQuery := strings.Join(flag.Args(), " ")
+
+	if len(connectQuery) > 0 {
+		node := config.closestMatch(connectQuery)
+		fmt.Fprintf(os.Stderr, "Connecting to %v\n", node)
 		fmt.Println(node.ConnectCommand())
 	}
 }
