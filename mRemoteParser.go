@@ -132,7 +132,7 @@ func buildDict(connections []Connection) (dict []string) {
 func (config ConnectionConfig) closestMatch(query string) (node Node) {
 	connections := config.FillConnectionMap([]Connection{}, "")
 	dict := buildDict(connections)
-	bagSize := []int{10}
+	bagSize := []int{2,3,4}
 	cm := closestmatch.New(dict, bagSize)
 	match := cm.Closest(strings.ToLower(query))
 
@@ -148,7 +148,7 @@ func (config ConnectionConfig) closestMatch(query string) (node Node) {
 
 func (node Node) ConnectCommand() string {
 	password := DecodePassword(node.Password)
-	return fmt.Sprintf("sshpass -p '%s' ssh -t %s@%s 'cd %s; bash'", password, node.Username, node.Hostname, node.HomeDir)
+	return fmt.Sprintf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -t %s@%s 'cd %s; bash'", password, node.Username, node.Hostname, node.HomeDir)
 }
 
 func main() {
