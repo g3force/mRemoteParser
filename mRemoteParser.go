@@ -1,18 +1,18 @@
 package main
 
 import (
-	"encoding/xml"
-	"fmt"
-	"io/ioutil"
-	"encoding/base64"
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/md5"
-	"bytes"
-	"github.com/schollz/closestmatch"
+	"encoding/base64"
+	"encoding/xml"
 	"flag"
-	"strings"
+	"fmt"
+	"github.com/schollz/closestmatch"
+	"io/ioutil"
 	"os"
+	"strings"
 )
 
 const sharedSecret = "mR3m"
@@ -27,11 +27,12 @@ type Container struct {
 
 type Node struct {
 	XMLName  xml.Name `xml:"Node"`
-	Type     string `xml:"Type,attr"`
-	Username string `xml:"Username,attr"`
-	Password string `xml:"Password,attr"`
-	Hostname string `xml:"Hostname,attr"`
-	HomeDir  string `xml:"UserField,attr"`
+	Type     string   `xml:"Type,attr"`
+	Username string   `xml:"Username,attr"`
+	Password string   `xml:"Password,attr"`
+	Hostname string   `xml:"Hostname,attr"`
+	HomeDir  string   `xml:"UserField,attr"`
+	Port     string   `xml:"Port,attr"`
 	Container
 }
 
@@ -132,7 +133,7 @@ func buildDict(connections []Connection) (dict []string) {
 func (config ConnectionConfig) closestMatch(query string) (node Node) {
 	connections := config.FillConnectionMap([]Connection{}, "")
 	dict := buildDict(connections)
-	bagSize := []int{2,3,4}
+	bagSize := []int{2, 3, 4}
 	cm := closestmatch.New(dict, bagSize)
 	match := cm.Closest(strings.ToLower(query))
 
@@ -148,7 +149,7 @@ func (config ConnectionConfig) closestMatch(query string) (node Node) {
 
 func (node Node) ConnectCommand() string {
 	password := DecodePassword(node.Password)
-	return fmt.Sprintf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -t %s@%s 'cd %s; bash'", password, node.Username, node.Hostname, node.HomeDir)
+	return fmt.Sprintf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -p %s -t %s@%s 'cd %s; bash'", password, node.Port, node.Username, node.Hostname, node.HomeDir)
 }
 
 func main() {
