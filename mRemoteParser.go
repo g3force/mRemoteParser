@@ -19,6 +19,7 @@ const sharedSecret = "mR3m"
 
 var fileName = flag.String("f", "confCons.xml", "The config file containing the connections")
 var listConnections = flag.Bool("l", false, "List all connections")
+var printPassword = flag.Bool("p", false, "Print password of connection")
 
 type Container struct {
 	Name  string `xml:"Name,attr"`
@@ -176,7 +177,12 @@ func main() {
 
 	if len(connectQuery) > 0 {
 		node := config.closestMatch(connectQuery)
-		fmt.Fprintf(os.Stderr, "Connecting to %v\n", node)
-		fmt.Println(node.ConnectCommand())
+		fmt.Fprintf(os.Stderr, "Found Connection: %v\n", node)
+		if *printPassword {
+			password := DecodePassword(node.Password)
+			fmt.Fprintf(os.Stderr, "Password: %v\n", password)
+		} else {
+			fmt.Println(node.ConnectCommand())
+		}
 	}
 }
