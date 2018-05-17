@@ -1,17 +1,17 @@
 # mRemoteParser
 Parse mRemoteNG config files and connect to hosts via native SSH
 
-## Build
+## Requirements
 
-```
-go get github.com/g3force/mRemoteParser
-```
-or
-```
-go install
-```
+ * Go
+ * Shell
+ * SSH executable in PATH
 
 ## Usage
+
+```
+./mRemoteParser.sh my host to connect to
+```
 
 The GO executable will parse a given config file and search for the entry that best matches a given search query. 
 It will then output the full ssh command that can be used to perform the connection.
