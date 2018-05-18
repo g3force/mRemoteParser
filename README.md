@@ -3,14 +3,19 @@ Parse mRemoteNG config files and connect to hosts via native SSH
 
 ## Requirements
 
- * Go
- * Shell
- * SSH executable in PATH
+ * Go (for parsing)
+ * Shell (for executing SSH)
+ * SSH executable on PATH
+ * sshpass executable on PATH (for passing passwords to SSH)
 
 ## Usage
 
 ```
+# Connect to host
 ./mRemoteParser.sh my host to connect to
+
+# List all connections
+./mRemoteParser -l
 ```
 
 The GO executable will parse a given config file and search for the entry that best matches a given search query. 
