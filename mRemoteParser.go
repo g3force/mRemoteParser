@@ -16,11 +16,13 @@ import (
 	"strings"
 )
 
+/** The shared secret seems to be build into mRemote */
 const sharedSecret = "mR3m"
 
 var fileName = flag.String("f", "confCons.xml", "The config file containing the connections")
 var listConnections = flag.Bool("l", false, "List all connections")
 var printPassword = flag.Bool("p", false, "Print password of connection")
+var execCommand = flag.String("c", "", "Execute a single command")
 
 type Container struct {
 	Name  string `xml:"Name,attr"`
@@ -71,7 +73,7 @@ func (node Node) String() (str string) {
 
 func DecodePassword(base64DecodedEncryptedPassword string) (decodedPassword string, err error) {
 	if len(base64DecodedEncryptedPassword) == 0 {
-		return "", errors.New("Password is empty")
+		return "", errors.New("password is empty")
 	}
 	encryptedPassword, err := base64.StdEncoding.DecodeString(base64DecodedEncryptedPassword)
 	if err != nil {
@@ -154,12 +156,20 @@ func (config ConnectionConfig) closestMatch(query string) (node Node) {
 }
 
 func (node Node) ConnectCommand() string {
+	return node.ExecCommand("bash")
+}
+
+func (node Node) ExecCommand(command string) string {
 	password, err := DecodePassword(node.Password)
 	if err != nil {
 		logError("Could not decode password: %v\n", err)
 		return "echo 'Could not decode password.'"
 	}
-	return fmt.Sprintf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -p %s -t %s@%s 'cd %s; bash'", password, node.Port, node.Username, node.Hostname, node.HomeDir)
+	if err != nil {
+		fmt.Println("Could not decode password")
+		panic(err)
+	}
+	return fmt.Sprintf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -p %s -t %s@%s 'cd %s; %s'", password, node.Port, node.Username, node.Hostname, node.HomeDir, command)
 }
 
 func logError(format string, a ...interface{}) {
@@ -191,7 +201,7 @@ func main() {
 
 	if len(connectQuery) > 0 {
 		node := config.closestMatch(connectQuery)
-		fmt.Fprintf(os.Stderr, "Found Connection: %v\n", node)
+		fmt.Fprintf(os.Stderr, "Connection: %v\n", node)
 		if *printPassword {
 			password, err := DecodePassword(node.Password)
 			if err != nil {
@@ -199,6 +209,9 @@ func main() {
 			} else {
 				logError("Password: %v\n", password)
 			}
+		} else if len(*execCommand) > 0 {
+			logError("%v\n", *execCommand)
+			fmt.Println(node.ExecCommand(*execCommand))
 		} else {
 			fmt.Println(node.ConnectCommand())
 		}
