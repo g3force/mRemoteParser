@@ -193,7 +193,8 @@ func main() {
 	}
 
 	if *listConnections {
-		fmt.Println(config)
+		// print config on stderr to avoid confusion with command
+		fmt.Fprintln(os.Stderr, config)
 		return
 	}
 
