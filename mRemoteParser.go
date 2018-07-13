@@ -20,7 +20,7 @@ import (
 /** The shared secret seems to be build into mRemote */
 const sharedSecret = "mR3m"
 
-var fileName = flag.String("f", "confCons.xml", "The config file containing the connections")
+var fileName = flag.String("f", "", "The config file containing the connections")
 var listConnections = flag.Bool("l", false, "List all connections")
 var printPassword = flag.Bool("p", false, "Print password of connection")
 var execCommand = flag.String("c", "", "Execute a single command")
@@ -200,6 +200,10 @@ func logError(format string, a ...interface{}) {
 func main() {
 
 	flag.Parse()
+
+	if fileName == nil || len(*fileName) == 0 {
+		*fileName = os.Getenv("MREMOTE_CONFIG_FILE")
+	}
 
 	data, err := ioutil.ReadFile(*fileName)
 	if err != nil {
