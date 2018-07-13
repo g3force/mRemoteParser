@@ -7,7 +7,7 @@ if [ ! -e "$MREMOTE_CONFIG_FILE" ]; then
     exit 1
 fi
 
-input="mRemoteParser -f $MREMOTE_CONFIG_FILE $@"
+input="mRemoteParser -print-command -f $MREMOTE_CONFIG_FILE $@"
 [[ $debug == 1 ]] && echo "Input: $input"
 command="`$input`"
 [[ $debug == 1 ]] && echo "Command: $command"

@@ -13,6 +13,7 @@ import (
 	"github.com/schollz/closestmatch"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"strings"
 )
 
@@ -23,6 +24,7 @@ var fileName = flag.String("f", "confCons.xml", "The config file containing the 
 var listConnections = flag.Bool("l", false, "List all connections")
 var printPassword = flag.Bool("p", false, "Print password of connection")
 var execCommand = flag.String("c", "", "Execute a single command")
+var PrintCommand = flag.Bool("print-command", false, "Print command instead of executing it")
 
 type Container struct {
 	Name  string `xml:"Name,attr"`
@@ -155,21 +157,40 @@ func (config ConnectionConfig) closestMatch(query string) (node Node) {
 	panic("Could not find any connection")
 }
 
-func (node Node) ConnectCommand() string {
+func (node Node) ConnectCommand() error {
 	return node.ExecCommand("bash")
 }
 
-func (node Node) ExecCommand(command string) string {
-	password, err := DecodePassword(node.Password)
-	if err != nil {
-		logError("Could not decode password: %v\n", err)
-		return "echo 'Could not decode password.'"
+func (node Node) ExecCommand(command string) error {
+	if len(node.Password) == 0 {
+		if *PrintCommand {
+			fmt.Printf("ssh -o StrictHostKeyChecking=no -p %s -t %s@%s 'cd %s; %s'", node.Port, node.Username, node.Hostname, node.HomeDir, command)
+		} else {
+			cmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", "-p", node.Port, "-t", node.Username+"@"+node.Hostname, "cd "+node.HomeDir+"; "+command)
+			return interactiveConsole(cmd)
+		}
+	} else {
+		password, err := DecodePassword(node.Password)
+		if err != nil {
+			logError("Could not decode password: %v\n", err)
+			return err
+		}
+		if *PrintCommand {
+			fmt.Printf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -p %s -t %s@%s 'cd %s; %s'", password, node.Port, node.Username, node.Hostname, node.HomeDir, command)
+		} else {
+			cmd := exec.Command("sshpass", "-p", password, "ssh", "-o", "StrictHostKeyChecking=no", "-p", node.Port, "-t", node.Username+"@"+node.Hostname, "cd "+node.HomeDir+"; "+command)
+			return interactiveConsole(cmd)
+		}
 	}
-	if err != nil {
-		fmt.Println("Could not decode password")
-		panic(err)
-	}
-	return fmt.Sprintf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -p %s -t %s@%s 'cd %s; %s'", password, node.Port, node.Username, node.Hostname, node.HomeDir, command)
+	return nil
+}
+
+func interactiveConsole(cmd *exec.Cmd) error {
+	cmd.Stdin = os.Stdin
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	err := cmd.Run()
+	return err
 }
 
 func logError(format string, a ...interface{}) {
@@ -211,10 +232,15 @@ func main() {
 				logError("Password: %v\n", password)
 			}
 		} else if len(*execCommand) > 0 {
-			logError("%v\n", *execCommand)
-			fmt.Println(node.ExecCommand(*execCommand))
+			err := node.ExecCommand(*execCommand)
+			if err != nil {
+				logError("Connection failed: %v\n", err)
+			}
 		} else {
-			fmt.Println(node.ConnectCommand())
+			err := node.ConnectCommand()
+			if err != nil {
+				logError("Connection failed: %v\n", err)
+			}
 		}
 	}
 }
