@@ -7,6 +7,7 @@ import (
 	"crypto/md5"
 	"encoding/base64"
 	"encoding/xml"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/schollz/closestmatch"
@@ -57,7 +58,8 @@ func (config ConnectionConfig) String() (str string) {
 
 func (node Node) String() (str string) {
 	if node.Type == "Connection" {
-		str += fmt.Sprintf("%s -> Hostname: %s, Home: %s, Username: %s, Password: %s", node.Name, node.Hostname, node.HomeDir, node.Username, node.Password)
+		encPassword, _ := DecodePassword(node.Password)
+		str += fmt.Sprintf("%s -> %s@%s:%s Password: %s", node.Name, node.Username, node.Hostname, node.HomeDir, encPassword)
 	} else if node.Type == "Container" {
 		str += fmt.Sprintf("%s\n", node.Name)
 	}
@@ -67,10 +69,13 @@ func (node Node) String() (str string) {
 	return
 }
 
-func DecodePassword(base64DecodedEncryptedPassword string) (decodedPassword string) {
+func DecodePassword(base64DecodedEncryptedPassword string) (decodedPassword string, err error) {
+	if len(base64DecodedEncryptedPassword) == 0 {
+		return "", errors.New("Password is empty")
+	}
 	encryptedPassword, err := base64.StdEncoding.DecodeString(base64DecodedEncryptedPassword)
 	if err != nil {
-		panic(err.Error())
+		return "", err
 	}
 
 	key16 := md5.Sum([]byte(sharedSecret))
@@ -82,12 +87,12 @@ func DecodePassword(base64DecodedEncryptedPassword string) (decodedPassword stri
 
 	// CBC mode always works in whole blocks.
 	if len(cipherText)%aes.BlockSize != 0 {
-		panic("ciphertext is not a multiple of the block size")
+		return "", errors.New("ciphertext is not a multiple of the block size")
 	}
 
 	cipherBlock, err := aes.NewCipher(privateKey)
 	if err != nil {
-		panic(err.Error())
+		return "", err
 	}
 	cbc := cipher.NewCBCDecrypter(cipherBlock, iv)
 
@@ -145,12 +150,20 @@ func (config ConnectionConfig) closestMatch(query string) (node Node) {
 		}
 	}
 
-	panic("Could find any connection")
+	panic("Could not find any connection")
 }
 
 func (node Node) ConnectCommand() string {
-	password := DecodePassword(node.Password)
+	password, err := DecodePassword(node.Password)
+	if err != nil {
+		logError("Could not decode password: %v\n", err)
+		return "echo 'Could not decode password.'"
+	}
 	return fmt.Sprintf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -p %s -t %s@%s 'cd %s; bash'", password, node.Port, node.Username, node.Hostname, node.HomeDir)
+}
+
+func logError(format string, a ...interface{}) {
+	fmt.Fprintf(os.Stderr, format, a)
 }
 
 func main() {
@@ -159,17 +172,18 @@ func main() {
 
 	data, err := ioutil.ReadFile(*fileName)
 	if err != nil {
-		panic(fmt.Sprintf("Could not read file: %s error: %config\n", *fileName, err))
+		logError("Could not read file '%s': %v\n", *fileName, err)
 	}
 
 	var config ConnectionConfig
 	xmlErr := xml.Unmarshal([]byte(data), &config)
 	if xmlErr != nil {
-		panic(fmt.Sprintf("error: %config", xmlErr))
+		logError("Error while parsing XML config: %v\n", xmlErr)
+		return
 	}
 
 	if *listConnections {
-		fmt.Fprintln(os.Stderr, config)
+		fmt.Println(config)
 		return
 	}
 
@@ -179,8 +193,12 @@ func main() {
 		node := config.closestMatch(connectQuery)
 		fmt.Fprintf(os.Stderr, "Found Connection: %v\n", node)
 		if *printPassword {
-			password := DecodePassword(node.Password)
-			fmt.Fprintf(os.Stderr, "Password: %v\n", password)
+			password, err := DecodePassword(node.Password)
+			if err != nil {
+				logError("Could not decode password: %v\n", err)
+			} else {
+				logError("Password: %v\n", password)
+			}
 		} else {
 			fmt.Println(node.ConnectCommand())
 		}
