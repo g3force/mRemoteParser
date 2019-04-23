@@ -24,7 +24,6 @@ var fileName = flag.String("f", "", "The config file containing the connections"
 var listConnections = flag.Bool("l", false, "List all connections")
 var printPassword = flag.Bool("p", false, "Print password of connection")
 var execCommand = flag.String("c", "", "Execute a single command")
-var PrintCommand = flag.Bool("print-command", false, "Print command instead of executing it")
 
 type Container struct {
 	Name  string `xml:"Name,attr"`
@@ -163,26 +162,16 @@ func (node Node) ConnectCommand() error {
 
 func (node Node) ExecCommand(command string) error {
 	if len(node.Password) == 0 {
-		if *PrintCommand {
-			fmt.Printf("ssh -o StrictHostKeyChecking=no -p %s -t %s@%s 'cd %s; %s'", node.Port, node.Username, node.Hostname, node.HomeDir, command)
-		} else {
-			cmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", "-p", node.Port, "-t", node.Username+"@"+node.Hostname, "cd "+node.HomeDir+"; "+command)
-			return interactiveConsole(cmd)
-		}
-	} else {
-		password, err := DecodePassword(node.Password)
-		if err != nil {
-			logError("Could not decode password: %v\n", err)
-			return err
-		}
-		if *PrintCommand {
-			fmt.Printf("sshpass -p '%s' ssh -o StrictHostKeyChecking=no -p %s -t %s@%s 'cd %s; %s'", password, node.Port, node.Username, node.Hostname, node.HomeDir, command)
-		} else {
-			cmd := exec.Command("sshpass", "-p", password, "ssh", "-o", "StrictHostKeyChecking=no", "-p", node.Port, "-t", node.Username+"@"+node.Hostname, "cd "+node.HomeDir+"; "+command)
-			return interactiveConsole(cmd)
-		}
+		cmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", "-p", node.Port, "-t", node.Username+"@"+node.Hostname, "cd "+node.HomeDir+"; "+command)
+		return interactiveConsole(cmd)
 	}
-	return nil
+	password, err := DecodePassword(node.Password)
+	if err != nil {
+		fmt.Printf("Could not decode password: %v\n", err)
+		return err
+	}
+	cmd := exec.Command("sshpass", "-p", password, "ssh", "-o", "StrictHostKeyChecking=no", "-p", node.Port, "-t", node.Username+"@"+node.Hostname, "cd "+node.HomeDir+"; "+command)
+	return interactiveConsole(cmd)
 }
 
 func interactiveConsole(cmd *exec.Cmd) error {
@@ -191,10 +180,6 @@ func interactiveConsole(cmd *exec.Cmd) error {
 	cmd.Stdout = os.Stdout
 	err := cmd.Run()
 	return err
-}
-
-func logError(format string, a ...interface{}) {
-	fmt.Fprintf(os.Stderr, format, a)
 }
 
 func main() {
@@ -207,19 +192,19 @@ func main() {
 
 	data, err := ioutil.ReadFile(*fileName)
 	if err != nil {
-		logError("Could not read file '%s': %v\n", *fileName, err)
+		fmt.Printf("Could not read file '%s': %v\n", *fileName, err)
+		return
 	}
 
 	var config ConnectionConfig
 	xmlErr := xml.Unmarshal([]byte(data), &config)
 	if xmlErr != nil {
-		logError("Error while parsing XML config: %v\n", xmlErr)
+		fmt.Printf("Error while parsing XML config: %v\n", xmlErr)
 		return
 	}
 
 	if *listConnections {
-		// print config on stderr to avoid confusion with command
-		fmt.Fprintln(os.Stderr, config)
+		fmt.Println(config)
 		return
 	}
 
@@ -227,23 +212,23 @@ func main() {
 
 	if len(connectQuery) > 0 {
 		node := config.closestMatch(connectQuery)
-		fmt.Fprintf(os.Stderr, "Connection: %v\n", node)
+		fmt.Printf("Connection: %v\n", node)
 		if *printPassword {
 			password, err := DecodePassword(node.Password)
 			if err != nil {
-				logError("Could not decode password: %v\n", err)
+				fmt.Printf("Could not decode password: %v\n", err)
 			} else {
-				logError("Password: %v\n", password)
+				fmt.Printf("Password: %v\n", password)
 			}
 		} else if len(*execCommand) > 0 {
 			err := node.ExecCommand(*execCommand)
 			if err != nil {
-				logError("Connection failed: %v\n", err)
+				fmt.Printf("Connection failed: %v\n", err)
 			}
 		} else {
 			err := node.ConnectCommand()
 			if err != nil {
-				logError("Connection failed: %v\n", err)
+				fmt.Printf("Connection failed: %v\n", err)
 			}
 		}
 	}
