@@ -14,6 +14,10 @@ Use go-get to download, install and update the tool:
 go get -u github.com/g3force/mRemoteParser
 ```
 
+## Configuration
+
+The mRemoteNG config file can be specified with the `MREMOTE_CONFIG_FILE` environment variable or with the `-f` option.
+
 ## Usage
 
 ```
