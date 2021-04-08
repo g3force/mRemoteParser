@@ -1,20 +1,21 @@
 package main
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/md5"
+	"crypto/sha1"
 	"encoding/base64"
 	"encoding/xml"
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/schollz/closestmatch"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/schollz/closestmatch"
+	"golang.org/x/crypto/pbkdf2"
 )
 
 /** The shared secret seems to be build into mRemote */
@@ -81,36 +82,28 @@ func DecodePassword(base64DecodedEncryptedPassword string) (decodedPassword stri
 		return "", err
 	}
 
-	key16 := md5.Sum([]byte(sharedSecret))
-	privateKey := key16[:]
+	salt := encryptedPassword[:aes.BlockSize]
+	nonce := encryptedPassword[aes.BlockSize:(2 * aes.BlockSize)]
+	cipherText := encryptedPassword[(2 * aes.BlockSize):]
 
-	// IV: Initialization Vector
-	iv := encryptedPassword[:aes.BlockSize]
-	cipherText := encryptedPassword[aes.BlockSize:]
+	key := pbkdf2.Key([]byte(sharedSecret), []byte(salt), 1000, 32, sha1.New)
 
-	// CBC mode always works in whole blocks.
-	if len(cipherText)%aes.BlockSize != 0 {
-		return "", errors.New("ciphertext is not a multiple of the block size")
-	}
-
-	cipherBlock, err := aes.NewCipher(privateKey)
+	cipherBlock, err := aes.NewCipher(key)
 	if err != nil {
 		return "", err
 	}
-	cbc := cipher.NewCBCDecrypter(cipherBlock, iv)
 
-	// CryptBlocks can work in-place if the two arguments are the same.
-	cbc.CryptBlocks(cipherText, cipherText)
-
-	// If the original plaintext lengths are not a multiple of the block
-	// size, padding would have to be added when encrypting, which will
-	// be removed here
-	lastChar := cipherText[len(cipherText)-1]
-	if lastChar < 33 || lastChar > 126 {
-		cipherText = bytes.Trim(cipherText, string(lastChar))
+	gcm, err := cipher.NewGCMWithNonceSize(cipherBlock, 16)
+	if err != nil {
+		return "", err
 	}
 
-	decodedPassword = string(cipherText)
+	plaintext, err := gcm.Open(nil, nonce, cipherText, []byte(salt))
+	if err != nil {
+		return "", err
+	}
+
+	decodedPassword = string(plaintext)
 
 	return
 }
